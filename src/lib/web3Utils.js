@@ -47,6 +47,63 @@ export function getTransactionExplorerUrl(chainId, txHash) {
   return `${netInfo.explorer}/tx/${txHash}`;
 }
 
+export function getExplorerApiUrl(chainId) {
+  const netInfo = getNetworkInfo(chainId);
+  if (!netInfo.explorer) return null;
+  if (netInfo.explorer.includes('etherscan')) {
+    const match = netInfo.explorer.match(/https:\/\/(?:api\.)?(\w*)\.?etherscan/);
+    const sub = match?.[1] || 'api';
+    return `https://${sub}.api.etherscan.io`;
+  }
+  return netInfo.explorer;
+}
+
+const DEFAULT_ETHERSCAN_API_KEY = 'YourEtherscanApiKey';
+const DEFAULT_BLOCKSCOUT_API_KEY = '';
+
+export async function fetchTxHistoryFromExplorer(chainId, address, apiKey) {
+  const netInfo = getNetworkInfo(chainId);
+  if (!netInfo.explorer || !address) return [];
+  const key = apiKey || DEFAULT_ETHERSCAN_API_KEY;
+
+  try {
+    let url;
+    if (netInfo.explorer.includes('etherscan')) {
+      const match = netInfo.explorer.match(/https:\/\/(\w+)\.etherscan/);
+      const subdomain = match ? match[1] : 'api';
+      url = `https://${subdomain === 'api' ? 'api' : `${subdomain}.api`}.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&sort=desc&apikey=${key}`;
+    } else {
+      url = `${netInfo.explorer}/api/v2/addresses/${address}/transactions`;
+    }
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+
+    if (netInfo.explorer.includes('etherscan')) {
+      if (data.status !== '1') return [];
+      return (data.result || []).slice(0, 10).map(tx => ({
+        hash: tx.hash,
+        value: tx.value,
+        timeStamp: tx.timeStamp,
+        network: chainId,
+        explorerUrl: getTransactionExplorerUrl(chainId, tx.hash),
+        isExplorerTx: true
+      }));
+    }
+
+    return (data.items || data.results || []).slice(0, 10).map(tx => ({
+      hash: tx.hash,
+      value: tx.value || '0',
+      timeStamp: tx.timestamp,
+      network: chainId,
+      explorerUrl: getTransactionExplorerUrl(chainId, tx.hash),
+      isExplorerTx: true
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export function getProviderName(ethProvider) {
   if (!ethProvider) return 'No provider';
   try {
@@ -75,7 +132,7 @@ export function detectAvailableProviders() {
   // Check for other standard providers
   const eth = window.ethereum;
   if (eth) {
-    // If multiple providers exist (e.g., when both MetaMask and Coinbase are installed)
+    // If multiple providers exist (e.g., when both PaliWallet and Coinbase are installed)
     if (Array.isArray(eth.providers) && eth.providers.length > 0) {
       eth.providers.forEach((p) => {
         const name = getProviderName(p);
@@ -182,35 +239,57 @@ export async function getProviderNetworks(ethProvider) {
 export async function requestAccountSelection(ethProvider) {
   if (!ethProvider) return [];
 
-  // Identify if it's Pali
-  const isPali = ethProvider.isPali || (window.pali && ethProvider === window.pali.ethereum);
+  const isPali = ethProvider.isPali || ethProvider.isPaliWallet
+    || (window.pali && (ethProvider === window.pali.ethereum));
+
+  if (isPali) {
+    try {
+      await ethProvider.request({ method: 'wallet_changeAccount' });
+      await new Promise(r => setTimeout(r, 500));
+      const a = await ethProvider.request({ method: 'eth_accounts' });
+      if (a && a.length > 0) return a;
+    } catch (e) {
+      console.warn('wallet_changeAccount failed:', e);
+    }
+  }
 
   try {
-    // 1. Force the wallet to show its account selection/permission UI
+    await ethProvider.request({ method: 'wallet_requestPermissions', params: [{ eth_accounts: {} }] });
+    await new Promise(r => setTimeout(r, 500));
+    const a = await ethProvider.request({ method: 'eth_accounts' });
+    if (a && a.length > 0) return a;
+  } catch (e) {
+    if (e.code === -32002) await new Promise(r => setTimeout(r, 1500));
+    const a = await ethProvider.request({ method: 'eth_requestAccounts' });
+    if (a && a.length > 0) return a;
+  }
+
+  try { return await ethProvider.request({ method: 'eth_accounts' }) || []; } catch { return []; }
+}
+
     try {
-      if (isPali) {
-        // Pali specific manual switch trigger
-        await ethProvider.request({ method: 'wallet_changeAccount' });
-      } else {
-        await ethProvider.request({
-          method: 'wallet_requestPermissions',
-          params: [{ eth_accounts: {} }]
-        });
-      }
+      await ethProvider.request({ method: 'wallet_requestPermissions', params: [{ eth_accounts: {} }] });
+      await new Promise(r => setTimeout(r, 400));
+      const accounts = await ethProvider.request({ method: 'eth_accounts' });
+      if (accounts && accounts.length > 0) return accounts;
     } catch (e) {
-      console.warn('Selection trigger failed, falling back to requestAccounts:', e);
+      if (e.code === -32002) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      const accounts = await ethProvider.request({ method: 'eth_requestAccounts' });
+      if (accounts && accounts.length > 0) return accounts;
     }
 
-    // 2. Get accounts (this will return whatever the user authorized)
-    const accounts = await ethProvider.request({ method: 'eth_requestAccounts' });
-    return accounts || [];
+    return await ethProvider.request({ method: 'eth_accounts' }) || [];
   } catch (e) {
-    console.error('Error in requestAccountSelection:', e);
-    // Silent fallback
+    console.error('requestAccountSelection error:', e);
     try {
-      return await ethProvider.request({ method: 'eth_accounts' });
-    } catch (e2) {
+      return await ethProvider.request({ method: 'eth_accounts' }) || [];
+    } catch {
       return [];
+    }
+  }
+}
     }
   }
 }
@@ -301,5 +380,35 @@ export async function getBalanceSafe(provider, addr, attempts = 3) {
     }
   }
   throw lastErr;
+}
+
+export async function fetchEthPrice() {
+  try {
+    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.ethereum?.usd ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function formatTimeAgo(timeStamp) {
+  if (!timeStamp) return '';
+  const ts = typeof timeStamp === 'string' ? parseInt(timeStamp, 10) : timeStamp;
+  const now = Math.floor(Date.now() / 1000);
+  const diff = now - ts;
+  if (diff < 10) return 'Ahora';
+  if (diff < 60) return `${diff}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
+  return new Date(ts * 1000).toLocaleDateString();
+}
+
+export function truncateAddress(addr, start = 6, end = 4) {
+  if (!addr) return '';
+  if (addr.length <= start + end) return addr;
+  return `${addr.substring(0, start)}...${addr.substring(addr.length - end)}`;
 }
 

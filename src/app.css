@@ -1,129 +1,37 @@
 @import "tailwindcss";
 
-/* Custom Theme Configuration for Tailwind v4 */
-@theme {
-  /* Colors - Futuristic Minimal */
-  --color-bg-primary: #050505;
-  --color-bg-secondary: #0a0a0a;
-  --color-bg-tertiary: #111111;
-  --color-bg-card: rgba(17, 17, 17, 0.8);
-  
-  --color-text-primary: #ffffff;
-  --color-text-secondary: #a0a0a0;
-  --color-text-muted: #666666;
-  
-  --color-accent-cyan: #00f0ff;
-  --color-accent-purple: #b829f7;
-  --color-accent-green: #00ff88;
-  
-  --color-border-subtle: rgba(255, 255, 255, 0.08);
-  --color-border-glow: rgba(0, 240, 255, 0.3);
+body { margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #050505; color: #fff; }
 
-  /* Font Families */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-display: 'Space Grotesk', sans-serif;
-}
+@keyframes bgFloat { 0%, 100% { transform: translate(0, 0) rotate(0deg); } 33% { transform: translate(2%, -2%) rotate(1deg); } 66% { transform: translate(-1%, 1%) rotate(-1deg); } }
+@keyframes float { 0%, 100% { transform: translate(0, 0) scale(1); } 25% { transform: translate(50px, -50px) scale(1.1); } 50% { transform: translate(-30px, 30px) scale(0.9); } 75% { transform: translate(30px, 50px) scale(1.05); } }
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } }
+@keyframes logoPulse { 0%, 100% { box-shadow: 0 0 20px rgba(0, 240, 255, 0.3); } 50% { box-shadow: 0 0 40px rgba(0, 240, 255, 0.6); } }
+@keyframes shimmer { 0% { left: -100%; } 100% { left: 100%; } }
+@keyframes ctaGlow { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(10%, 10%); } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-/* Base Styles */
-@layer base {
-  body {
-    @apply bg-bg-primary text-text-primary font-sans antialiased;
-  }
-}
+.animate-bg-float { animation: bgFloat 20s ease-in-out infinite; }
+.animate-float { animation: float 15s ease-in-out infinite; }
+.animate-fade-in-up { animation: fadeInUp 0.8s ease-out both; }
+.animate-pulse { animation: pulse 2s ease-in-out infinite; }
+.animate-logo-pulse { animation: logoPulse 3s ease-in-out infinite; }
+.animate-spin { animation: spin 1s linear infinite; }
 
-/* Custom Animations */
-@layer utilities {
-  @keyframes bg-float {
-    0%, 100% { transform: translate(0, 0) rotate(0deg); }
-    33% { transform: translate(2%, -2%) rotate(1deg); }
-    66% { transform: translate(-1%, 1%) rotate(-1deg); }
-  }
-  
-  @keyframes float {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    25% { transform: translate(50px, -50px) scale(1.1); }
-    50% { transform: translate(-30px, 30px) scale(0.9); }
-    75% { transform: translate(30px, 50px) scale(1.05); }
-  }
-  
-  @keyframes fade-in-up {
-    from {
-      opacity: 0;
-      transform: translateY(30px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
-  @keyframes pulse-glow {
-    0%, 100% { box-shadow: 0 0 20px rgba(0, 240, 255, 0.3); }
-    50% { box-shadow: 0 0 40px rgba(0, 240, 255, 0.6); }
-  }
-  
-  @keyframes shimmer {
-    0% { left: -100%; }
-    100% { left: 100%; }
-  }
-  
-  @keyframes cta-glow {
-    0%, 100% { transform: translate(0, 0); }
-    50% { transform: translate(10%, 10%); }
-  }
+.delay-100 { animation-delay: 0.1s; } .delay-200 { animation-delay: 0.2s; } .delay-300 { animation-delay: 0.3s; } .delay-400 { animation-delay: 0.4s; }
+.delay-500 { animation-delay: -5s; } .delay-1000 { animation-delay: -10s; }
 
-  .animate-bg-float {
-    animation: bg-float 20s ease-in-out infinite;
-  }
-  
-  .animate-float {
-    animation: float 15s ease-in-out infinite;
-  }
-  
-  .animate-fade-in-up {
-    animation: fade-in-up 0.8s ease-out both;
-  }
-  
-  .animate-pulse-glow {
-    animation: pulse-glow 3s ease-in-out infinite;
-  }
-  
-  .animate-shimmer {
-    animation: shimmer 0.5s ease;
-  }
-  
-  .animate-cta-glow {
-    animation: cta-glow 10s ease-in-out infinite;
-  }
+.gradient-text { background: linear-gradient(135deg, #ffffff 0%, #a0a0a0 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.gradient-text-accent { background: linear-gradient(135deg, #00f0ff 0%, #b829f7 50%, #00ff88 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.gradient-bg { background: linear-gradient(135deg, #00f0ff 0%, #b829f7 50%, #00ff88 100%); }
 
-  /* Delay utilities */
-  .delay-100 { animation-delay: 0.1s; }
-  .delay-200 { animation-delay: 0.2s; }
-  .delay-300 { animation-delay: 0.3s; }
-  .delay-400 { animation-delay: 0.4s; }
-  .delay-5000 { animation-delay: -5s; }
-  .delay-10000 { animation-delay: -10s; }
+.btn-shimmer { position: relative; overflow: hidden; }
+.btn-shimmer::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent); transition: left 0.5s ease; }
+.btn-shimmer:hover::before { left: 100%; }
 
-  /* Gradient text */
-  .gradient-text {
-    @apply bg-gradient-to-br from-white to-text-secondary bg-clip-text text-transparent;
-  }
-  
-  .gradient-text-accent {
-    @apply bg-gradient-to-r from-accent-cyan via-accent-purple to-accent-green bg-clip-text text-transparent;
-  }
-  
-  .gradient-bg {
-    @apply bg-gradient-to-br from-accent-cyan via-accent-purple to-accent-green;
-  }
+.cta-glow::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(0, 240, 255, 0.1) 0%, transparent 70%); }
 
-  /* Glass effect */
-  .glass {
-    @apply bg-bg-card/80 backdrop-blur-xl border border-border-subtle;
-  }
-  
-  .glass-hover:hover {
-    @apply border-border-glow -translate-y-2;
-    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
-  }
-}
+.scroll-reveal { opacity: 1; transform: translateY(0); transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+.scroll-reveal.visible { opacity: 1; transform: translateY(0); }
+
+.stagger-1 { transition-delay: 0.1s; } .stagger-2 { transition-delay: 0.2s; } .stagger-3 { transition-delay: 0.3s; } .stagger-4 { transition-delay: 0.4s; }
