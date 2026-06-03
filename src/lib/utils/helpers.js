@@ -1,3 +1,5 @@
+import { getNetworkInfo, getTransactionExplorerUrl } from './networks.js';
+
 export async function fetchEthPrice() {
   try {
     const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
@@ -29,28 +31,33 @@ export function truncateAddress(addr, start = 6, end = 4) {
 }
 
 export async function fetchTxHistoryFromExplorer(chainId, address, apiKey) {
-  const { getNetworkInfo, getTransactionExplorerUrl } = await import('./networks.js');
   const netInfo = getNetworkInfo(chainId);
   if (!netInfo.explorer || !address) return [];
 
-  const DEFAULT_ETHERSCAN_API_KEY = 'YourEtherscanApiKey';
+  const DEFAULT_ETHERSCAN_API_KEY = 'T44KV98IA374K4R4YG5UQSWIA3AKHEJ8SH';
   const key = apiKey || DEFAULT_ETHERSCAN_API_KEY;
 
   try {
     let url;
     if (netInfo.explorer.includes('etherscan')) {
-      const match = netInfo.explorer.match(/https:\/\/(\w+)\.etherscan/);
-      const subdomain = match ? match[1] : 'api';
-      url = `https://${subdomain === 'api' ? 'api' : `${subdomain}.api`}.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&sort=desc&apikey=${key}`;
+      url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=account&action=txlist&address=${address}&apikey=${key}`;
     } else {
       url = `${netInfo.explorer}/api/v2/addresses/${address}/transactions`;
     }
+    console.log(`[fetchTxHistory] URL: ${url}`);
     const res = await fetch(url);
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.warn(`[fetchTxHistory] HTTP ${res.status} for ${url}`);
+      return [];
+    }
     const data = await res.json();
 
     if (netInfo.explorer.includes('etherscan')) {
-      if (data.status !== '1') return [];
+      console.log(`[fetchTxHistory] Etherscan response status=${data.status} message=${data.message} count=${data.result?.length || 0}`);
+      if (data.status !== '1') {
+        console.warn(`[fetchTxHistory] Etherscan error: ${data.result}`);
+        return [];
+      }
       return (data.result || []).slice(0, 10).map(tx => ({
         hash: tx.hash,
         value: tx.value,
@@ -61,6 +68,7 @@ export async function fetchTxHistoryFromExplorer(chainId, address, apiKey) {
       }));
     }
 
+    console.log(`[fetchTxHistory] Blockscout URL: ${url}`);
     return (data.items || data.results || []).slice(0, 10).map(tx => ({
       hash: tx.hash,
       value: tx.value || '0',
@@ -69,7 +77,8 @@ export async function fetchTxHistoryFromExplorer(chainId, address, apiKey) {
       explorerUrl: getTransactionExplorerUrl(chainId, tx.hash),
       isExplorerTx: true
     }));
-  } catch {
+  } catch (err) {
+    console.error(`[fetchTxHistory] Error for chain ${chainId}:`, err?.message || err);
     return [];
   }
 }

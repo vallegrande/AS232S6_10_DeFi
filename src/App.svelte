@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from "svelte";
-  import { BrowserProvider, formatEther, parseEther } from "ethers";
+  import { BrowserProvider, formatEther, Interface, parseEther, Contract, ContractFactory } from "ethers";
   import { wallet } from "./lib/walletStore.svelte.js";
   import {
     networks, networksAdd, getNetworkInfo, getNetworkFamily,
@@ -11,8 +11,8 @@
     getProviderNetworks, requestAccountSelection, filterAvailableNetworks, getBalanceSafe,
     copyToClipboard, openInExplorer as openAddressInExplorer
   } from "./lib/utils/wallet.js";
-  import { fetchEthPrice, formatTimeAgo, truncateAddress, fetchTxHistoryFromExplorer } from "./lib/utils/helpers.js";
-  import { encodeDeposit, encodeTransfer } from "./lib/utils/contracts.js";
+  import { fetchEthPrice, fetchTxHistoryFromExplorer } from "./lib/utils/helpers.js";
+  import { encodeDeposit, encodeTransfer, TRANSPARENT_WALLET_ABI, TRANSPARENT_WALLET_BYTECODE, decodeDepositedEvent, decodeTransferredEvent } from "./lib/utils/contracts.js";
   import Navbar from "./lib/components/Navbar.svelte";
   import HomePage from "./lib/pages/HomePage.svelte";
   import WalletPage from "./lib/pages/WalletPage.svelte";
@@ -34,6 +34,8 @@
   let balancePollingTimer = null;
   let accountsChangedHandler = null;
   let priceTimer = null;
+  let scrollTick = false;
+  let chainChangeTimeout = null;
 
   function internalDetectProviders() {
     const detected = detectProviders();
@@ -44,13 +46,19 @@
   }
 
   function handleScroll() {
-    scrollY = window.scrollY;
-    const hero = document.querySelector('.hero-section');
-    const features = document.querySelector('.features-section');
-    const cta = document.querySelector('.cta-section');
-    if (hero) { const rect = hero.getBoundingClientRect(); heroVisible = rect.top < window.innerHeight * 0.8; }
-    if (features) { const rect = features.getBoundingClientRect(); featuresVisible = rect.top < window.innerHeight * 0.8; }
-    if (cta) { const rect = cta.getBoundingClientRect(); ctaVisible = rect.top < window.innerHeight * 0.8; }
+    if (scrollTick) return;
+    scrollTick = true;
+    requestAnimationFrame(() => {
+      scrollY = window.scrollY;
+      const hero = document.querySelector('.hero-section');
+      const features = document.querySelector('.features-section');
+      const cta = document.querySelector('.cta-section');
+      const h = window.innerHeight * 0.8;
+      if (hero) { const rect = hero.getBoundingClientRect(); heroVisible = rect.top < h; }
+      if (features) { const rect = features.getBoundingClientRect(); featuresVisible = rect.top < h; }
+      if (cta) { const rect = cta.getBoundingClientRect(); ctaVisible = rect.top < h; }
+      scrollTick = false;
+    });
   }
 
   async function fetchNetworkInfo() {
@@ -87,19 +95,22 @@
   function startBalancePolling() {
     stopBalancePolling();
     if (!wallet.address || !wallet.provider) return;
-    balancePollingTimer = setInterval(() => { refreshBalance(); }, 10000);
+    balancePollingTimer = setInterval(refreshBalance, 10000);
   }
 
   async function switchNetworkTo(chainIdKey) {
     if (!wallet.currentEthereumProvider) { wallet.error = 'No hay proveedor conectado para cambiar la red.'; return; }
     const params = networksAdd[String(chainIdKey)];
     if (!params) { wallet.error = 'Red no soportada para cambio automático.'; return; }
+    const attachListeners = () => {
+      wallet.currentEthereumProvider.removeListener('chainChanged', handleChainChanged);
+      wallet.currentEthereumProvider.on('chainChanged', handleChainChanged);
+    };
     try {
       await wallet.currentEthereumProvider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: params.chainIdHex }] });
       wallet.selectedNetworkId = String(chainIdKey);
       wallet.provider = new BrowserProvider(wallet.currentEthereumProvider);
-      wallet.currentEthereumProvider.removeListener('chainChanged', handleChainChanged);
-      wallet.currentEthereumProvider.on('chainChanged', handleChainChanged);
+      attachListeners();
       await fetchNetworkInfo();
       wallet.error = null;
     } catch (switchError) {
@@ -112,8 +123,7 @@
           });
           wallet.selectedNetworkId = String(chainIdKey);
           wallet.provider = new BrowserProvider(wallet.currentEthereumProvider);
-          wallet.currentEthereumProvider.removeListener('chainChanged', handleChainChanged);
-          wallet.currentEthereumProvider.on('chainChanged', handleChainChanged);
+          attachListeners();
           await fetchNetworkInfo();
           wallet.error = null;
         } catch (addErr) {
@@ -159,56 +169,169 @@
   async function loadTxHistory() {
     if (!wallet.address || !wallet.chainId) return;
     wallet.loadingHistory = true;
+    wallet.error = null;
     try {
+      console.log('[TxHistory] Fetching for chain:', wallet.chainId, 'address:', wallet.address);
       const explorerTxs = await fetchTxHistoryFromExplorer(wallet.chainId, wallet.address, '');
-      const existingHashes = new Set(wallet.txList.map(t => t.hash));
-      const newTxs = explorerTxs.filter(t => !existingHashes.has(t.hash));
-      if (newTxs.length > 0) wallet.txList = [...newTxs, ...wallet.txList];
-      if (explorerTxs.length === 0 && !getExplorerApiUrl(wallet.chainId)) {
-        wallet.error = 'No se encontraron transacciones en el explorador de bloques.';
-      } else wallet.error = null;
+      console.log('[TxHistory] Explorer response:', explorerTxs);
+      wallet.txList = explorerTxs.map(tx => ({ ...tx, isExplorerTx: true }));
+      if (explorerTxs.length === 0) {
+        const apiUrl = getExplorerApiUrl(wallet.chainId);
+        console.log('[TxHistory] Empty result. Explorer API URL:', apiUrl);
+        if (!apiUrl) {
+          wallet.error = 'No hay explorador de bloques disponible para esta red.';
+        }
+      }
     } catch (err) {
-      console.error('Error loading tx history:', err);
-      wallet.error = 'Error al cargar historial desde el explorador.';
+      console.error('[TxHistory] Error:', err);
+      wallet.error = 'Error al conectar con el explorador de bloques.';
     } finally {
       wallet.loadingHistory = false;
     }
   }
 
+  async function loadContractEvents() {
+    if (!wallet.provider || !wallet.contractAddress) { wallet.contractEvents = []; return; }
+    if (wallet.contractPreset !== 'transparentWallet') return;
+    wallet.contractEventsLoading = true;
+    try {
+      const ct = new Contract(wallet.contractAddress, TRANSPARENT_WALLET_ABI, wallet.provider);
+      const fromBlock = wallet.chainId === '11155111' ? 8000000 : 0;
+      const [deposits, transfers] = await Promise.all([
+        ct.queryFilter("Deposited", fromBlock, "latest"),
+        ct.queryFilter("Transferred", fromBlock, "latest"),
+      ]);
+      const events = [
+        ...deposits.map(d => ({ ...decodeDepositedEvent(d), type: 'deposit' })),
+        ...transfers.map(t => ({ ...decodeTransferredEvent(t), type: 'transfer' })),
+      ];
+      events.sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
+      wallet.contractEvents = events;
+      console.log(`[ContractEvents] Loaded ${events.length} events from contract`);
+    } catch (err) {
+      console.warn('[ContractEvents] Error loading events:', err);
+    } finally {
+      wallet.contractEventsLoading = false;
+    }
+  }
+
+  function isValidAddress(addr) {
+    return /^0x[a-fA-F0-9]{40}$/.test(addr);
+  }
+
+  function isValidEthereumAddress(addr) {
+    return addr && /^0x[a-fA-F0-9]{40}$/.test(addr);
+  }
+
   async function sendTransfer() {
     wallet.error = null;
+    wallet.successMsg = null;
     if (!wallet.signer) { wallet.error = 'Signer no disponible. Conecta la wallet primero.'; return; }
-    if (!wallet.toAddress && !wallet.useContract) { wallet.error = 'Destino inválido.'; return; }
     wallet.sending = true;
+    let recipientBefore = null;
     try {
       let tx;
       if (wallet.useContract) {
-        if (wallet.contractPreset === 'transferManager') {
-          if (!wallet.contractAddress) { wallet.error = 'Ingrese la dirección del contrato TransferManager.'; wallet.sending = false; return; }
+        if (!wallet.contractAddress || !isValidEthereumAddress(wallet.contractAddress)) {
+          wallet.error = 'Ingrese una dirección de contrato válida (0x...).'; wallet.sending = false; return;
+        }
+        if (wallet.contractPreset === 'transparentWallet') {
           const isDeposit = wallet.tmToAddress === '';
+          if (!isDeposit) {
+            if (!wallet.tmToAddress || !isValidEthereumAddress(wallet.tmToAddress)) {
+              wallet.error = 'Ingrese una dirección de destino válida.'; wallet.sending = false; return;
+            }
+            if (!wallet.tmAmount || isNaN(Number(wallet.tmAmount)) || Number(wallet.tmAmount) <= 0) {
+              wallet.error = 'Ingrese un monto válido mayor a 0.'; wallet.sending = false; return;
+            }
+            recipientBefore = await wallet.provider.getBalance(wallet.tmToAddress);
+          }
           const contractTx = { to: wallet.contractAddress, data: isDeposit ? encodeDeposit() : encodeTransfer(wallet.tmToAddress, wallet.tmAmount) };
-          if (isDeposit && wallet.contractValue) contractTx.value = parseEther(String(wallet.contractValue));
+          if (isDeposit && wallet.contractValue) {
+            contractTx.value = parseEther(String(wallet.contractValue));
+          }
           tx = await wallet.signer.sendTransaction(contractTx);
         } else {
-          if (!wallet.contractAddress || !wallet.contractData) { wallet.error = 'Proporcione la dirección del contrato y los datos (hex).'; wallet.sending = false; return; }
+          if (!wallet.contractData) { wallet.error = 'Proporcione los datos (hex) del contrato.'; wallet.sending = false; return; }
           const contractTx = { to: wallet.contractAddress, data: wallet.contractData };
           if (wallet.contractValue) contractTx.value = parseEther(String(wallet.contractValue));
           tx = await wallet.signer.sendTransaction(contractTx);
         }
       } else {
-        if (!wallet.sendAmount) { wallet.error = 'Ingrese un monto válido.'; wallet.sending = false; return; }
-        const value = parseEther(String(wallet.sendAmount));
-        tx = await wallet.signer.sendTransaction({ to: wallet.toAddress, value });
+        if (!wallet.toAddress || !isValidEthereumAddress(wallet.toAddress)) {
+          wallet.error = 'Ingrese una dirección de destino válida (0x...).'; wallet.sending = false; return;
+        }
+        if (!wallet.sendAmount || isNaN(Number(wallet.sendAmount)) || Number(wallet.sendAmount) <= 0) {
+          wallet.error = 'Ingrese un monto válido mayor a 0.'; wallet.sending = false; return;
+        }
+        tx = await wallet.signer.sendTransaction({ to: wallet.toAddress, value: parseEther(String(wallet.sendAmount)) });
       }
       await tx.wait();
       wallet.txHash = tx.hash;
       wallet.txList = [{ hash: wallet.txHash, to: tx.to, value: String(tx.value || 0), network: wallet.chainId, explorerUrl: getTransactionExplorerUrl(wallet.chainId, wallet.txHash), isExplorerTx: false }, ...wallet.txList];
       await refreshBalance();
-      fetchNetworkInfo();
       loadTxHistory();
+      loadContractEvents();
+      if (wallet.useContract && wallet.contractPreset === 'transparentWallet' && wallet.provider) {
+        try {
+          const iface = new Interface(TRANSPARENT_WALLET_ABI);
+          const data = iface.encodeFunctionData("getBalance");
+          const result = await wallet.provider.call({ to: wallet.contractAddress, data });
+          wallet.contractBalance = formatEther(result);
+        } catch (e) {
+          console.warn('Error refreshing contract balance:', e);
+        }
+        if (recipientBefore !== null) {
+          try {
+            const recipientAfter = await wallet.provider.getBalance(wallet.tmToAddress);
+            const diff = formatEther(recipientAfter - recipientBefore);
+            wallet.successMsg = `✅ Transferencia exitosa: ${diff} ETH enviados del contrato → ${wallet.tmToAddress}`;
+          } catch (e) {
+            wallet.successMsg = `✅ Transferencia ejecutada. Hash: ${wallet.txHash}`;
+          }
+        } else {
+          wallet.successMsg = `✅ Depósito exitoso: ${wallet.contractValue} ETH al contrato`;
+        }
+      } else if (wallet.useContract) {
+        wallet.successMsg = `✅ Contrato ejecutado. Hash: ${wallet.txHash}`;
+      } else {
+        wallet.successMsg = `✅ Transacción enviada: ${wallet.sendAmount} ETH a ${wallet.toAddress}`;
+      }
     } catch (err) {
       console.error('Error sending tx:', err);
-      wallet.error = err?.message || 'Error enviando la transacción.';
+      if (err?.code === 'ACTION_REJECTED' || err?.code === 4001) {
+        wallet.error = 'Transacción rechazada por el usuario.';
+      } else {
+        wallet.error = err?.reason || err?.message || 'Error enviando la transacción.';
+      }
+    } finally {
+      wallet.sending = false;
+    }
+  }
+
+  async function deployContract() {
+    wallet.error = null;
+    wallet.successMsg = null;
+    if (!wallet.signer) { wallet.error = 'Signer no disponible. Conecta la wallet primero.'; return; }
+    wallet.sending = true;
+    try {
+      const factory = new ContractFactory(TRANSPARENT_WALLET_ABI, TRANSPARENT_WALLET_BYTECODE, wallet.signer);
+      const contract = await factory.deploy();
+      await contract.waitForDeployment();
+      const addr = await contract.getAddress();
+      wallet.contractAddress = addr;
+      wallet.contractPreset = 'transparentWallet';
+      wallet.useContract = true;
+      wallet.successMsg = `✅ Contrato desplegado: ${addr}`;
+      wallet.txHash = contract.deploymentTransaction()?.hash;
+      loadContractEvents();
+    } catch (err) {
+      console.error('Error deploying contract:', err);
+      if (err?.code === 'ACTION_REJECTED' || err?.code === 4001) {
+        wallet.error = 'Despliegue rechazado por el usuario.';
+      } else {
+        wallet.error = err?.reason || err?.message || 'Error desplegando el contrato.';
+      }
     } finally {
       wallet.sending = false;
     }
@@ -230,7 +353,6 @@
       wallet.error = null;
       const rawBalance = await getBalanceSafe(wallet.provider, wallet.address);
       wallet.balance = formatEther(rawBalance);
-      await fetchNetworkInfo();
     } catch (err) {
       console.error(err);
       wallet.error = err.message || 'Error al refrescar balance';
@@ -275,7 +397,7 @@
           wallet.selectedNetworkFamily = getNetworkFamily(wallet.selectedNetworkId);
         } else {
           if (wallet.currentEthereumProvider.isPali || (window.pali && wallet.currentEthereumProvider === window.pali.ethereum)) {
-            wallet.availableNetworks = filterAvailableNetworks(['57', '5700', '57000', '57042', '57057', '560048'], networks);
+            wallet.availableNetworks = filterAvailableNetworks(['57', '5700', '57000', '57042', '57057'], networks);
             wallet.selectedNetworkFamily = 'utxo';
           } else {
             wallet.availableNetworks = networks;
@@ -289,12 +411,17 @@
         wallet.signer = await getSigner();
         startBalancePolling();
         loadTxHistory();
+        loadContractEvents();
         updateEthPrice();
 
         wallet.walletVisible = false;
         requestAnimationFrame(() => { requestAnimationFrame(() => { wallet.walletVisible = true; }); });
 
         if (typeof wallet.currentEthereumProvider.on === 'function') {
+          if (accountsChangedHandler) {
+            wallet.currentEthereumProvider.removeListener('accountsChanged', accountsChangedHandler);
+            wallet.currentEthereumProvider.removeListener('chainChanged', handleChainChanged);
+          }
           accountsChangedHandler = (accounts) => handleAccountsChanged(accounts);
           wallet.currentEthereumProvider.on('accountsChanged', accountsChangedHandler);
           wallet.currentEthereumProvider.on('chainChanged', handleChainChanged);
@@ -407,10 +534,18 @@
   function handleChainChanged(chainIdHex) {
     console.log('Network changed:', chainIdHex);
     wallet.selectedNetworkId = String(parseInt(chainIdHex, 16));
+    wallet.txList = [];
     if (wallet.currentEthereumProvider) {
       wallet.provider = new BrowserProvider(wallet.currentEthereumProvider);
-      refreshBalance();
-      startBalancePolling();
+      if (chainChangeTimeout) clearTimeout(chainChangeTimeout);
+      chainChangeTimeout = setTimeout(() => {
+        fetchNetworkInfo();
+        refreshBalance();
+        startBalancePolling();
+        loadTxHistory();
+        loadContractEvents();
+        chainChangeTimeout = null;
+      }, 300);
     } else { window.location.reload(); }
   }
 
@@ -462,7 +597,9 @@
       {switchNetworkTo}
       {copyAddress}
       {sendTransfer}
+      {deployContract}
       {loadTxHistory}
+      {loadContractEvents}
       {refreshAccounts}
       {internalDetectProviders}
       {removeNetworkFromWallet}

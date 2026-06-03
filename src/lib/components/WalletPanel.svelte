@@ -8,6 +8,7 @@
   import AccountInfo from './AccountInfo.svelte';
   import SendForm from './SendForm.svelte';
   import TxHistory from './TxHistory.svelte';
+  import ContractEvents from './ContractEvents.svelte';
 
   let {
     connectWallet,
@@ -17,7 +18,9 @@
     removeNetworkFromWallet,
     copyAddress,
     sendTransfer,
+    deployContract,
     loadTxHistory,
+    loadContractEvents,
     refreshAccounts,
     internalDetectProviders,
   } = $props();
@@ -41,10 +44,15 @@
         </button>
       </div>
       <div class="md:col-span-3 space-y-3 sm:space-y-4">
-        <SendForm {sendTransfer} />
+        <SendForm {sendTransfer} {deployContract} />
         <div class="bg-[#111] border border-white/[0.08] rounded-2xl p-5 transition-all duration-500">
           <TxHistory {loadTxHistory} />
         </div>
+        {#if wallet.useContract && wallet.contractPreset === 'transparentWallet'}
+          <div class="bg-[#111] border border-white/[0.08] rounded-2xl p-5 transition-all duration-500">
+            <ContractEvents {loadContractEvents} />
+          </div>
+        {/if}
       </div>
     </div>
   </div>
@@ -53,5 +61,11 @@
 {#if wallet.error}
   <div class="mt-6 p-4 bg-[rgba(239,68,68,0.08)] border border-[rgba(239,68,68,0.15)] text-[#f87171] rounded-xl text-sm text-center">
     {wallet.error}
+  </div>
+{/if}
+
+{#if wallet.successMsg}
+  <div class="mt-4 p-4 bg-[rgba(0,255,136,0.08)] border border-[rgba(0,255,136,0.15)] text-[#00ff88] rounded-xl text-sm text-center">
+    {wallet.successMsg}
   </div>
 {/if}

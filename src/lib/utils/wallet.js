@@ -1,3 +1,5 @@
+import { networks, getNetworkInfo } from './networks.js';
+
 export function getProviderName(ethProvider) {
   if (!ethProvider) return 'No provider';
   try {
@@ -50,11 +52,10 @@ export function detectAvailableProviders() {
 
 export async function getProviderNetworks(ethProvider) {
   if (!ethProvider) return null;
-  const { networks } = await import('./networks.js');
 
   try {
     if (ethProvider.isPali) {
-      const syscoinNetworks = ['57', '5700', '57000', '57042', '57057', '560048'];
+      const syscoinNetworks = ['57', '5700', '57000', '57042', '57057'];
       try {
         const pali = window['pali'];
         if (pali?.getNetworks) {
@@ -149,12 +150,10 @@ export async function getBalanceSafe(provider, addr, attempts = 3) {
 }
 
 export function openInExplorer(address, chainId) {
-  import('./networks.js').then(({ getNetworkInfo }) => {
-    const netInfo = getNetworkInfo(chainId);
-    if (netInfo.explorer && address) {
-      window.open(`${netInfo.explorer}/address/${address}`, '_blank');
-    }
-  });
+  const netInfo = getNetworkInfo(chainId);
+  if (netInfo.explorer && address) {
+    window.open(`${netInfo.explorer}/address/${address}`, '_blank');
+  }
 }
 
 export async function copyToClipboard(text) {

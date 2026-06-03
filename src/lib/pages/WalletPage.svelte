@@ -3,7 +3,7 @@
 
   let {
     connectWallet, disconnectWallet, switchAccount, switchNetworkTo, removeNetworkFromWallet,
-    copyAddress, sendTransfer, loadTxHistory, refreshAccounts, internalDetectProviders,
+    copyAddress, sendTransfer, deployContract, loadTxHistory, loadContractEvents, refreshAccounts, internalDetectProviders,
   } = $props();
 </script>
 
@@ -21,7 +21,9 @@
       {removeNetworkFromWallet}
       {copyAddress}
       {sendTransfer}
+      {deployContract}
       {loadTxHistory}
+      {loadContractEvents}
       {refreshAccounts}
       {internalDetectProviders}
     />

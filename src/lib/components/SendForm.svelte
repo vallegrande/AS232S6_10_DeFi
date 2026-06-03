@@ -3,11 +3,11 @@
   import { wallet } from "../walletStore.svelte.js";
   import { getTransactionExplorerUrl } from "../utils/networks.js";
   import { Interface } from "ethers";
-  import { TRANSFER_MANAGER_ABI } from "../utils/contracts.js";
+  import { TRANSPARENT_WALLET_ABI } from "../utils/contracts.js";
 
-  const tmInterface = new Interface(TRANSFER_MANAGER_ABI);
+  const tmInterface = new Interface(TRANSPARENT_WALLET_ABI);
 
-  let { sendTransfer } = $props();
+  let { sendTransfer, deployContract } = $props();
 
   let gasLimit = $state(null);
   let gasPrice = $state(null);
@@ -15,12 +15,21 @@
   let gasError = $state(null);
   let debounceTimer = $state(null);
   let tmBalanceLoading = $state(false);
+  let tmMode = $state('deposit');
+
+  $effect(() => {
+    if (wallet.contractAddress && wallet.contractPreset === 'transparentWallet' && wallet.provider) {
+      fetchContractBalance();
+    } else {
+      wallet.contractBalance = null;
+    }
+  });
 
   async function fetchContractBalance() {
-    if (!wallet.provider || !wallet.contractAddress || wallet.contractPreset !== 'transferManager') { wallet.contractBalance = null; return; }
+    if (!wallet.provider || !wallet.contractAddress || wallet.contractPreset !== 'transparentWallet') { wallet.contractBalance = null; return; }
     tmBalanceLoading = true;
     try {
-      const data = tmInterface.encodeFunctionData("getContractBalance");
+      const data = tmInterface.encodeFunctionData("getBalance");
       const result = await wallet.provider.call({ to: wallet.contractAddress, data });
       wallet.contractBalance = formatEther(result);
     } catch { wallet.contractBalance = null; }
@@ -44,10 +53,12 @@
     try {
       const tx = { from: wallet.address, to };
       if (wallet.useContract) {
-        if (wallet.contractPreset === 'transferManager') {
-          const isDeposit = wallet.tmToAddress === '';
+        if (wallet.contractPreset === 'transparentWallet') {
+          const isDeposit = tmMode === 'deposit';
           tx.data = isDeposit ? tmInterface.encodeFunctionData("deposit") : tmInterface.encodeFunctionData("transfer", [wallet.tmToAddress, parseEther(String(wallet.tmAmount || '0'))]);
-          if (isDeposit && wallet.contractValue) tx.value = parseEther(String(wallet.contractValue));
+          if (isDeposit && wallet.contractValue) {
+            tx.value = parseEther(String(wallet.contractValue));
+          }
         } else {
           if (wallet.contractData) tx.data = wallet.contractData;
           if (wallet.contractValue) tx.value = parseEther(String(wallet.contractValue));
@@ -75,6 +86,15 @@
     debounceTimer = setTimeout(estimateGas, 600);
     fetchContractBalance();
   }
+
+  function setTmMode(mode) {
+    tmMode = mode;
+    if (mode === 'deposit') {
+      wallet.tmToAddress = '';
+      wallet.tmAmount = '';
+    }
+    scheduleEstimate();
+  }
 </script>
 
 <div class="bg-[#111] border border-white/[0.08] rounded-2xl p-5 transition-all duration-500">
@@ -89,7 +109,7 @@
     {#if wallet.useContract}
       <div class="flex bg-[#0a0a0a] rounded-lg p-0.5 border border-white/[0.06] mb-3">
         <button class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-md transition-all {wallet.contractPreset === 'manual' ? 'bg-[#00f0ff] text-black' : 'text-[#666] hover:text-white'}" onclick={() => { wallet.contractPreset = 'manual'; scheduleEstimate(); }}>Manual</button>
-        <button class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-md transition-all {wallet.contractPreset === 'transferManager' ? 'bg-[#00f0ff] text-black' : 'text-[#666] hover:text-white'}" onclick={() => { wallet.contractPreset = 'transferManager'; scheduleEstimate(); }}>TransferManager</button>
+        <button class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-md transition-all {wallet.contractPreset === 'transparentWallet' ? 'bg-[#00f0ff] text-black' : 'text-[#666] hover:text-white'}" onclick={() => { wallet.contractPreset = 'transparentWallet'; scheduleEstimate(); }}>TransparentWallet</button>
       </div>
 
       <div>
@@ -97,31 +117,67 @@
         <input id="contract-address" placeholder="0x..." bind:value={wallet.contractAddress} oninput={scheduleEstimate} class="w-full px-4 py-2.5 rounded-lg bg-[#0a0a0a] border border-white/[0.08] text-white text-sm focus:outline-none focus:border-[#00f0ff] placeholder:text-[#444]" />
       </div>
 
-      {#if wallet.contractPreset === 'transferManager'}
+      {#if wallet.contractPreset === 'transparentWallet'}
         <div class="space-y-3">
+          <button class="w-full py-2 rounded-lg border border-dashed border-[rgba(0,240,255,0.2)] text-xs text-[#00f0ff] font-semibold transition-all hover:border-[#00f0ff] hover:bg-[rgba(0,240,255,0.04)] disabled:opacity-50" onclick={deployContract} disabled={wallet.sending}>
+            {wallet.sending ? 'Desplegando...' : '+ Desplegar nuevo TransparentWallet'}
+          </button>
+
           <div class="flex items-center justify-between rounded-lg bg-[rgba(0,240,255,0.04)] border border-[rgba(0,240,255,0.08)] p-3 text-xs">
             <span class="text-[#a0a0a0]">Balance del contrato</span>
             {#if tmBalanceLoading}
               <span class="w-3 h-3 border-2 border-white/10 border-t-[#00f0ff] rounded-full animate-spin"></span>
             {:else if wallet.contractBalance !== null}
-              <span class="text-white font-mono font-semibold">{Number(wallet.contractBalance).toFixed(4)} ETH</span>
+              <span class="text-white font-mono font-semibold">{Number(wallet.contractBalance).toFixed(6)} ETH</span>
             {:else}
               <span class="text-[#666]">---</span>
             {/if}
           </div>
+
+          <div class="flex bg-[#0a0a0a] rounded-lg p-0.5 border border-white/[0.06]">
+            <button class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-md transition-all {tmMode === 'deposit' ? 'bg-[#00f0ff] text-black' : 'text-[#666] hover:text-white'}" onclick={() => setTmMode('deposit')}>Depositar</button>
+            <button class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-md transition-all {tmMode === 'transfer' ? 'bg-[#00f0ff] text-black' : 'text-[#666] hover:text-white'}" onclick={() => setTmMode('transfer')}>Transferir</button>
+          </div>
+
+          <div class="flex justify-center gap-1 text-[10px] text-[#555] font-mono">
+            {#if tmMode === 'transfer'}
+              <span class="text-[#00f0ff]">Tú (gas)</span>
+              <span>→</span>
+              <span class="text-[#b829f7]">Contrato</span>
+              <span>→</span>
+              <span class="text-[#00ff88]">Destino</span>
+            {:else}
+              <span class="text-[#00f0ff]">Tú</span>
+              <span>→</span>
+              <span class="text-[#b829f7]">Contrato</span>
+            {/if}
+          </div>
+
           <div class="h-px bg-white/[0.06]"></div>
-          <p class="text-[#a0a0a0] text-xs uppercase tracking-wider font-semibold">Transferir desde el contrato</p>
-          <div>
-            <label for="tm-to" class="text-[#a0a0a0] text-xs uppercase tracking-wider font-semibold block mb-1.5">Destino</label>
-            <input id="tm-to" placeholder="0x..." bind:value={wallet.tmToAddress} oninput={scheduleEstimate} class="w-full px-4 py-2.5 rounded-lg bg-[#0a0a0a] border border-white/[0.08] text-white text-sm focus:outline-none focus:border-[#00f0ff] placeholder:text-[#444]" />
-          </div>
-          <div>
-            <label for="tm-amount" class="text-[#a0a0a0] text-xs uppercase tracking-wider font-semibold block mb-1.5">Monto</label>
-            <div class="relative">
-              <input id="tm-amount" placeholder="0.00" bind:value={wallet.tmAmount} oninput={scheduleEstimate} class="w-full px-4 py-2.5 rounded-lg bg-[#0a0a0a] border border-white/[0.08] text-white text-sm focus:outline-none focus:border-[#00f0ff] placeholder:text-[#444]" />
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#666] font-semibold">ETH</span>
+
+          {#if tmMode === 'transfer'}
+            <p class="text-[#a0a0a0] text-xs uppercase tracking-wider font-semibold">Transferir desde el contrato</p>
+            <div>
+              <label for="tm-to" class="text-[#a0a0a0] text-xs uppercase tracking-wider font-semibold block mb-1.5">Dirección Destino</label>
+              <input id="tm-to" placeholder="0x..." bind:value={wallet.tmToAddress} oninput={scheduleEstimate} class="w-full px-4 py-2.5 rounded-lg bg-[#0a0a0a] border border-white/[0.08] text-white text-sm focus:outline-none focus:border-[#00f0ff] placeholder:text-[#444]" />
             </div>
-          </div>
+            <div>
+              <label for="tm-amount" class="text-[#a0a0a0] text-xs uppercase tracking-wider font-semibold block mb-1.5">Monto a transferir</label>
+              <div class="relative">
+                <input id="tm-amount" placeholder="0.00" bind:value={wallet.tmAmount} oninput={scheduleEstimate} class="w-full px-4 py-2.5 rounded-lg bg-[#0a0a0a] border border-white/[0.08] text-white text-sm focus:outline-none focus:border-[#00f0ff] placeholder:text-[#444]" />
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#666] font-semibold">ETH</span>
+              </div>
+            </div>
+          {:else}
+            <p class="text-[#00f0ff] text-xs uppercase tracking-wider font-semibold">Depositar en el contrato</p>
+            <div>
+              <label for="tm-deposit-amount" class="text-[#a0a0a0] text-xs uppercase tracking-wider font-semibold block mb-1.5">Monto a depositar</label>
+              <div class="relative">
+                <input id="tm-deposit-amount" placeholder="0.00" bind:value={wallet.contractValue} oninput={scheduleEstimate} class="w-full px-4 py-2.5 rounded-lg bg-[#0a0a0a] border border-white/[0.08] text-white text-sm focus:outline-none focus:border-[#00f0ff] placeholder:text-[#444]" />
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#666] font-semibold">ETH</span>
+              </div>
+            </div>
+          {/if}
         </div>
       {:else}
         <div>
@@ -130,13 +186,15 @@
         </div>
       {/if}
 
-      <div>
-        <label for="contract-value" class="text-[#a0a0a0] text-xs uppercase tracking-wider font-semibold block mb-1.5">Valor ETH (opcional)</label>
-        <div class="relative">
-          <input id="contract-value" placeholder="0.00" bind:value={wallet.contractValue} oninput={scheduleEstimate} class="w-full px-4 py-2.5 rounded-lg bg-[#0a0a0a] border border-white/[0.08] text-white text-sm focus:outline-none focus:border-[#00f0ff] placeholder:text-[#444]" />
-          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#666] font-semibold">ETH</span>
+      {#if wallet.contractPreset === 'manual'}
+        <div>
+          <label for="contract-value" class="text-[#a0a0a0] text-xs uppercase tracking-wider font-semibold block mb-1.5">Valor ETH (opcional)</label>
+          <div class="relative">
+            <input id="contract-value" placeholder="0.00" bind:value={wallet.contractValue} oninput={scheduleEstimate} class="w-full px-4 py-2.5 rounded-lg bg-[#0a0a0a] border border-white/[0.08] text-white text-sm focus:outline-none focus:border-[#00f0ff] placeholder:text-[#444]" />
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#666] font-semibold">ETH</span>
+          </div>
         </div>
-      </div>
+      {/if}
     {:else}
       <div>
         <label for="to-address" class="text-[#a0a0a0] text-xs uppercase tracking-wider font-semibold block mb-1.5">Dirección Destino</label>
@@ -198,7 +256,7 @@
         <div class="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin inline-block mr-2"></div>
         Enviando...
       {:else}
-        {wallet.useContract && wallet.contractPreset === 'transferManager' ? (wallet.tmToAddress ? 'Transferir desde Contrato' : 'Depositar en Contrato') : wallet.useContract ? 'Ejecutar Contrato' : 'Enviar Transacción'}
+        {wallet.useContract && wallet.contractPreset === 'transparentWallet' ? (tmMode === 'transfer' ? 'Transferir desde Contrato' : 'Depositar en Contrato') : wallet.useContract ? 'Ejecutar Contrato' : 'Enviar Transacción'}
       {/if}
     </button>
   </div>

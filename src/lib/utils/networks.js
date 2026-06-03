@@ -1,14 +1,14 @@
 export const networks = {
   '1': { name: 'Ethereum Mainnet', explorer: 'https://etherscan.io' },
-  '5': { name: 'Goerli Testnet', explorer: 'https://goerli.etherscan.io' },
   '11155111': { name: 'Sepolia Testnet', explorer: 'https://sepolia.etherscan.io' },
   '137': { name: 'Polygon Mainnet', explorer: 'https://polygonscan.com' },
-  '80001': { name: 'Polygon Mumbai', explorer: 'https://mumbai.polygonscan.com' },
+  '80002': { name: 'Polygon Amoy', explorer: 'https://amoy.polygonscan.com' },
   '56': { name: 'BSC Mainnet', explorer: 'https://bscscan.com' },
   '97': { name: 'BSC Testnet', explorer: 'https://testnet.bscscan.com' },
   '42161': { name: 'Arbitrum One', explorer: 'https://arbiscan.io' },
-  '421613': { name: 'Arbitrum Goerli', explorer: 'https://goerli.arbiscan.io' },
+  '421614': { name: 'Arbitrum Sepolia', explorer: 'https://sepolia.arbiscan.io' },
   '10': { name: 'Optimism', explorer: 'https://optimistic.etherscan.io' },
+  '11155420': { name: 'Optimism Sepolia', explorer: 'https://sepolia-optimism.etherscan.io' },
   '5700': { name: 'Rollux', explorer: 'https://explorer.rollux.com' },
   '57': { name: 'Syscoin NEVM', explorer: 'https://explorer.syscoin.org' },
   '57000': { name: 'Syscoin NEVM Testnet', explorer: 'https://tanenbaum.io' },
@@ -18,11 +18,15 @@ export const networks = {
 };
 
 export const networksAdd = {
-  '1': { chainIdHex: '0x1', chainName: 'Ethereum Mainnet', rpcUrls: ['https://mainnet.infura.io/v3/'], nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, blockExplorerUrls: ['https://etherscan.io'] },
-  '5': { chainIdHex: '0x5', chainName: 'Goerli Testnet', rpcUrls: ['https://rpc.ankr.com/eth_goerli'], nativeCurrency: { name: 'Goerli Ether', symbol: 'ETH', decimals: 18 }, blockExplorerUrls: ['https://goerli.etherscan.io'] },
+  '1': { chainIdHex: '0x1', chainName: 'Ethereum Mainnet', rpcUrls: ['https://ethereum-rpc.publicnode.com'], nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, blockExplorerUrls: ['https://etherscan.io'] },
   '137': { chainIdHex: '0x89', chainName: 'Polygon Mainnet', rpcUrls: ['https://polygon-rpc.com/'], nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 }, blockExplorerUrls: ['https://polygonscan.com'] },
-  '80001': { chainIdHex: '0x13881', chainName: 'Polygon Mumbai', rpcUrls: ['https://rpc-mumbai.maticvigil.com/'], nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 }, blockExplorerUrls: ['https://mumbai.polygonscan.com'] },
+  '80002': { chainIdHex: '0x13882', chainName: 'Polygon Amoy', rpcUrls: ['https://rpc-amoy.polygon.technology/'], nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 }, blockExplorerUrls: ['https://amoy.polygonscan.com'] },
   '56': { chainIdHex: '0x38', chainName: 'BSC Mainnet', rpcUrls: ['https://bsc-dataseed.binance.org/'], nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 }, blockExplorerUrls: ['https://bscscan.com'] },
+  '97': { chainIdHex: '0x61', chainName: 'BSC Testnet', rpcUrls: ['https://data-seed-prebsc-1-s1.binance.org:8545/'], nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 }, blockExplorerUrls: ['https://testnet.bscscan.com'] },
+  '42161': { chainIdHex: '0xA4B1', chainName: 'Arbitrum One', rpcUrls: ['https://arb1.arbitrum.io/rpc'], nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, blockExplorerUrls: ['https://arbiscan.io'] },
+  '421614': { chainIdHex: '0x66EEE', chainName: 'Arbitrum Sepolia', rpcUrls: ['https://sepolia-rollup.arbitrum.io/rpc'], nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, blockExplorerUrls: ['https://sepolia.arbiscan.io'] },
+  '10': { chainIdHex: '0xA', chainName: 'Optimism', rpcUrls: ['https://mainnet.optimism.io'], nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, blockExplorerUrls: ['https://optimistic.etherscan.io'] },
+  '11155420': { chainIdHex: '0xAA37DC', chainName: 'Optimism Sepolia', rpcUrls: ['https://sepolia.optimism.io'], nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, blockExplorerUrls: ['https://sepolia-optimism.etherscan.io'] },
   '5700': { chainIdHex: '0x1644', chainName: 'Rollux', rpcUrls: ['https://rpc.rollux.com'], nativeCurrency: { name: 'Syscoin', symbol: 'SYS', decimals: 18 }, blockExplorerUrls: ['https://explorer.rollux.com'] },
   '57': { chainIdHex: '0x39', chainName: 'Syscoin NEVM', rpcUrls: ['https://rpc.syscoin.org'], nativeCurrency: { name: 'Syscoin', symbol: 'SYS', decimals: 18 }, blockExplorerUrls: ['https://explorer.syscoin.org'] },
   '57000': { chainIdHex: '0xDEA8', chainName: 'Syscoin NEVM Testnet', rpcUrls: ['https://rpc.tanenbaum.io'], nativeCurrency: { name: 'Syscoin', symbol: 'SYS', decimals: 18 }, blockExplorerUrls: ['https://tanenbaum.io'] },
@@ -63,11 +67,9 @@ export function getExplorerApiUrl(chainId) {
   const netInfo = getNetworkInfo(chainId);
   if (!netInfo.explorer) return null;
   if (netInfo.explorer.includes('etherscan')) {
-    const match = netInfo.explorer.match(/https:\/\/(?:api\.)?(\w*)\.?etherscan/);
-    const sub = match?.[1] || 'api';
-    return `https://${sub}.api.etherscan.io`;
+    return `https://api.etherscan.io/v2/api?chainid=${chainId}`;
   }
-  return netInfo.explorer;
+  return `${netInfo.explorer}/api/v2/addresses`;
 }
 
 function getErrorAnalysis(code, message) {
